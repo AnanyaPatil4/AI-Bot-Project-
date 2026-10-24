@@ -1,0 +1,2 @@
+episodes,mean_reward,reward_std,best_reward,worst_reward,mean_steps,episodes_reward_ge_200,reward_ge_200_percent
+100,-120.3386,27.984608577075385,-26.82,-171.67,1000.0,0,0.0

@@ -1,0 +1,9 @@
+metric,value
+episode_count,300.0
+mean_reward,-182.435
+best_reward,47.34
+worst_reward,-538.27
+reward_std,110.23415922116575
+mean_steps,89.44333333333333
+min_steps,54.0
+max_steps,160.0

@@ -1,0 +1,2 @@
+episodes,mean_reward,median_reward,reward_std,best_reward,worst_reward,mean_steps,successful_landings,landing_success_rate_percent
+100,133.6783,188.83499999999998,113.30334114293149,260.291,-96.724,434.42,52,52.0
