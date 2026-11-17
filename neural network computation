@@ -1,0 +1,49 @@
+from pathlib import Path
+import sys
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import load_episode_data, get_xy, standardize_train_test
+
+ROOT = Path(__file__).resolve().parents[1]
+df = load_episode_data()
+X, y = get_xy(df, features=("steps", "final_x", "final_y"))
+Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
+Xtr, Xte, _, _ = standardize_train_test(Xtr, Xte)
+rng = np.random.default_rng(42)
+W1 = rng.normal(0, np.sqrt(2/3), (3,8)); b1 = np.zeros((1,8))
+W2 = rng.normal(0, np.sqrt(1/8), (8,1)); b2 = np.zeros((1,1))
+def sigmoid(z): return 1/(1+np.exp(-np.clip(z,-35,35)))
+def bce(y, p):
+    p = np.clip(p, 1e-9, 1-1e-9)
+    return -np.mean(y*np.log(p)+(1-y)*np.log(1-p))
+Y = ytr.reshape(-1,1); losses=[]; val_losses=[]
+lr=0.03; epochs=3000
+for epoch in range(epochs):
+    z1=Xtr@W1+b1; a1=np.tanh(z1)
+    p=sigmoid(a1@W2+b2)
+    d2=(p-Y)/len(Y)
+    dW2=a1.T@d2; db2=d2.sum(axis=0,keepdims=True)
+    d1=(d2@W2.T)*(1-a1**2)
+    dW1=Xtr.T@d1; db1=d1.sum(axis=0,keepdims=True)
+    W2-=lr*dW2; b2-=lr*db2; W1-=lr*dW1; b1-=lr*db1
+    losses.append(bce(Y,p))
+    pv=sigmoid(np.tanh(Xte@W1+b1)@W2+b2)
+    val_losses.append(bce(yte.reshape(-1,1),pv))
+prob=sigmoid(np.tanh(Xte@W1+b1)@W2+b2).ravel()
+pred=(prob>=0.5).astype(int)
+metrics={"accuracy":accuracy_score(yte,pred),
+         "precision":precision_score(yte,pred,zero_division=0),
+         "recall":recall_score(yte,pred,zero_division=0),
+         "f1":f1_score(yte,pred,zero_division=0),
+         "auc":roc_auc_score(yte,prob) if len(np.unique(yte))==2 else np.nan}
+print("NumPy MLP architecture: 3-8-1; tanh hidden activation; sigmoid output")
+for k,v in metrics.items(): print(f"{k}: {v:.4f}")
+pd.DataFrame([metrics]).to_csv(ROOT/"numpy_mlp_metrics.csv",index=False)
+np.savez(ROOT/"numpy_mlp_weights.npz",W1=W1,b1=b1,W2=W2,b2=b2)
+plt.figure(figsize=(7,4)); plt.plot(losses,label="Training"); plt.plot(val_losses,label="Validation")
+plt.xlabel("Epoch"); plt.ylabel("Binary cross-entropy"); plt.title("NumPy MLP 3-8-1 Loss")
+plt.legend(); plt.tight_layout(); plt.savefig(ROOT/"numpy_mlp_loss.png",dpi=160); plt.close()
