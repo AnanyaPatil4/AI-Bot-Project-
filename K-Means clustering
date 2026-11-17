@@ -1,0 +1,50 @@
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.metrics import silhouette_score, davies_bouldin_score, adjusted_rand_score
+from sklearn.preprocessing import StandardScaler
+
+ROOT = Path(__file__).resolve().parents[1]
+files = ["baseline_readings.csv", "ppo_evaluation.csv", "ppo_final_evaluation.csv"]
+frames = []
+for name in files:
+    p = ROOT / name
+    if p.exists():
+        d = pd.read_csv(p)
+        reward_col = "total_reward"
+        steps_col = "steps"
+        if {reward_col, steps_col}.issubset(d.columns):
+            frames.append(pd.DataFrame({"total_reward": d[reward_col], "steps": d[steps_col], "stage": name}))
+if not frames: raise FileNotFoundError("No episode CSV files with total_reward and steps found.")
+data = pd.concat(frames, ignore_index=True).dropna()
+X = StandardScaler().fit_transform(data[["total_reward", "steps"]].to_numpy(float))
+
+def kmeans(X, k=3, n_init=10, max_iter=300, seed=42):
+    rng = np.random.default_rng(seed)
+    best = None
+    for _ in range(n_init):
+        centers = X[rng.choice(len(X), k, replace=False)].copy()
+        for _ in range(max_iter):
+            labels = np.argmin(((X[:, None, :] - centers[None, :, :])**2).sum(axis=2), axis=1)
+            new = np.array([X[labels == j].mean(axis=0) if np.any(labels == j) else
+                            X[rng.integers(len(X))] for j in range(k)])
+            if np.allclose(new, centers): break
+            centers = new
+        inertia = ((X - centers[labels])**2).sum()
+        if best is None or inertia < best[0]: best = (inertia, labels.copy(), centers.copy())
+    return best
+
+inertia, labels, centers = kmeans(X, k=3)
+data["cluster"] = labels
+sil = silhouette_score(X, labels) if len(set(labels)) > 1 else float("nan")
+db = davies_bouldin_score(X, labels) if len(set(labels)) > 1 else float("nan")
+data.to_csv(ROOT / "kmeans_episode_clusters.csv", index=False)
+print(f"K-Means k=3 | inertia={inertia:.3f} | silhouette={sil:.3f} | Davies-Bouldin={db:.3f}")
+plt.figure(figsize=(7,5))
+for c in sorted(data.cluster.unique()):
+    part = data[data.cluster == c]
+    plt.scatter(part.steps, part.total_reward, s=18, alpha=.65, label=f"Cluster {c}")
+plt.xlabel("Episode length (steps)"); plt.ylabel("Total reward")
+plt.title("K-Means Clustering of LunarLander Episodes"); plt.legend()
+plt.tight_layout(); plt.savefig(ROOT / "kmeans_clusters.png", dpi=160); plt.close()
