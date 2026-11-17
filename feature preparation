@@ -1,0 +1,42 @@
+from pathlib import Path
+import numpy as np
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+DATA = ROOT
+
+def load_episode_data():
+    """Load PPO-v2 episodes; this file contains the target used in the paper."""
+    path = DATA / "ppo_final_evaluation.csv"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing {path}. Run evaluate_final.py first.")
+    df = pd.read_csv(path)
+    required = {"steps", "final_x", "final_y", "successful_landing", "total_reward"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"{path.name} is missing columns: {sorted(missing)}")
+    return df
+
+def get_xy(df, features=("steps", "final_x", "final_y")):
+    """Return numeric feature matrix and binary project-defined landing target."""
+    X = df.loc[:, list(features)].astype(float).to_numpy()
+    y = df["successful_landing"].astype(int).to_numpy()
+    if not np.isfinite(X).all():
+        raise ValueError("Selected features contain NaN or infinite values.")
+    return X, y
+
+def standardize_train_test(X_train, X_test):
+    mean = X_train.mean(axis=0)
+    std = X_train.std(axis=0)
+    std[std == 0] = 1.0
+    return (X_train - mean) / std, (X_test - mean) / std, mean, std
+
+def binary_metrics(y_true, y_pred):
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+    return {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "precision": precision_score(y_true, y_pred, zero_division=0),
+        "recall": recall_score(y_true, y_pred, zero_division=0),
+        "f1": f1_score(y_true, y_pred, zero_division=0),
+        "confusion_matrix": confusion_matrix(y_true, y_pred).tolist()
+    }
