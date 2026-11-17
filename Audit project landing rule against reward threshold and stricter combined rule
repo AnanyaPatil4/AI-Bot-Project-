@@ -1,0 +1,24 @@
+from pathlib import Path
+import pandas as pd
+
+ROOT=Path(__file__).resolve().parents[1]
+p=ROOT/"ppo_final_evaluation.csv"
+df=pd.read_csv(p)
+needed={"successful_landing","total_reward","final_x"}
+if not needed.issubset(df.columns):
+    raise ValueError(f"Expected columns {sorted(needed)} in {p.name}")
+project=df["successful_landing"].astype(bool)
+reward=df["total_reward"]>=200
+center=df["final_x"].abs()<0.2
+strict=project & reward & center
+summary=pd.DataFrame([
+ {"criterion":"Project-defined landing rule","episodes":int(project.sum())},
+ {"criterion":"Reward >= 200","episodes":int(reward.sum())},
+ {"criterion":"Both project rule and reward >= 200","episodes":int((project&reward).sum())},
+ {"criterion":"Project rule only","episodes":int((project&~reward).sum())},
+ {"criterion":"Reward threshold only","episodes":int((reward&~project).sum())},
+ {"criterion":"Project rule + |final_x| < 0.2 + reward >= 200","episodes":int(strict.sum())},
+])
+summary["percentage"]=100*summary.episodes/len(df)
+summary.to_csv(ROOT/"landing_criteria_comparison.csv",index=False)
+print(summary.to_string(index=False))
