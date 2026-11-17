@@ -1,0 +1,50 @@
+from pathlib import Path
+import sys
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import StratifiedKFold, cross_validate, cross_val_predict
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import make_scorer, accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, ConfusionMatrixDisplay
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import load_episode_data, get_xy
+
+ROOT = Path(__file__).resolve().parents[1]
+df = load_episode_data()
+X, y = get_xy(df, features=("steps", "final_x", "final_y"))
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+models = {
+ "Logistic Regression": make_pipeline(StandardScaler(), LogisticRegression(max_iter=3000, class_weight=None)),
+ "SVM Linear": make_pipeline(StandardScaler(), SVC(kernel="linear", probability=True, random_state=42)),
+ "SVM RBF": make_pipeline(StandardScaler(), SVC(kernel="rbf", probability=True, random_state=42)),
+ "Decision Tree": DecisionTreeClassifier(random_state=42),
+ "Decision Tree depth 3": DecisionTreeClassifier(max_depth=3, random_state=42),
+ "Random Forest": RandomForestClassifier(n_estimators=300, random_state=42, class_weight=None)
+}
+scoring={"accuracy":"accuracy","precision":"precision","recall":"recall","f1":"f1","auc":"roc_auc"}
+rows=[]
+for name, model in models.items():
+    scores=cross_validate(model,X,y,cv=cv,scoring=scoring)
+    row={"model":name}
+    for metric in scoring: row[metric]=scores[f"test_{metric}"].mean()
+    rows.append(row)
+    print(name, " | ".join(f"{m}={row[m]:.3f}" for m in scoring))
+results=pd.DataFrame(rows)
+results.to_csv(ROOT/"classification_5fold_results.csv",index=False)
+ax=results.set_index("model")[["accuracy","precision","recall","f1","auc"]].plot(kind="bar",figsize=(11,6))
+ax.set_ylabel("Mean 5-fold score"); ax.set_ylim(0,1); ax.set_title("Five-Fold Classification Model Comparison")
+plt.xticks(rotation=25,ha="right"); plt.tight_layout()
+plt.savefig(ROOT/"classification_model_comparison.png",dpi=160); plt.close()
+
+# Out-of-fold confusion matrix for the random forest; no training-set predictions.
+rf=models["Random Forest"]
+oof_pred=cross_val_predict(rf,X,y,cv=cv,method="predict")
+rf.fit(X,y)
+ConfusionMatrixDisplay.from_predictions(y,oof_pred,display_labels=["Not landed","Landed"],cmap="viridis")
+plt.title("Random Forest — Out-of-Fold Confusion Matrix")
+plt.tight_layout(); plt.savefig(ROOT/"random_forest_oof_confusion_matrix.png",dpi=160); plt.close()
