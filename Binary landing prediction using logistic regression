@@ -1,0 +1,46 @@
+from pathlib import Path
+import sys
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, roc_curve
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import load_episode_data, get_xy, standardize_train_test, binary_metrics
+
+ROOT = Path(__file__).resolve().parents[1]
+df = load_episode_data()
+X, y = get_xy(df)
+Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
+Xtr, Xte, _, _ = standardize_train_test(Xtr, Xte)
+Xtr = np.c_[np.ones(len(Xtr)), Xtr]; Xte = np.c_[np.ones(len(Xte)), Xte]
+
+def sigmoid(z):
+    z = np.clip(z, -35, 35)
+    return 1 / (1 + np.exp(-z))
+
+w = np.zeros(Xtr.shape[1]); lr = 0.05; epochs = 3000
+losses = []
+for _ in range(epochs):
+    p = sigmoid(Xtr @ w)
+    grad = Xtr.T @ (p - ytr) / len(ytr)
+    w -= lr * grad
+    p = np.clip(p, 1e-9, 1 - 1e-9)
+    losses.append(-np.mean(ytr*np.log(p) + (1-ytr)*np.log(1-p)))
+
+prob = sigmoid(Xte @ w); pred = (prob >= 0.5).astype(int)
+metrics = binary_metrics(yte, pred)
+metrics["roc_auc"] = roc_auc_score(yte, prob) if len(np.unique(yte)) == 2 else float("nan")
+print("NumPy Logistic Regression — project-defined landing label")
+for k, v in metrics.items(): print(f"{k}: {v}")
+pd.DataFrame({"metric": list(metrics), "value": [str(v) for v in metrics.values()]}).to_csv(
+    ROOT / "logistic_regression_metrics.csv", index=False)
+plt.figure(figsize=(6,4)); plt.plot(losses)
+plt.xlabel("Epoch"); plt.ylabel("Binary cross-entropy"); plt.title("NumPy Logistic Regression Loss")
+plt.tight_layout(); plt.savefig(ROOT / "logistic_regression_loss.png", dpi=160); plt.close()
+if len(np.unique(yte)) == 2:
+    fpr, tpr, _ = roc_curve(yte, prob)
+    plt.figure(figsize=(5,5)); plt.plot(fpr,tpr,label=f"AUC={metrics['roc_auc']:.3f}")
+    plt.plot([0,1],[0,1],"k--"); plt.xlabel("False positive rate"); plt.ylabel("True positive rate")
+    plt.title("Logistic Regression ROC"); plt.legend(); plt.tight_layout()
+    plt.savefig(ROOT / "logistic_regression_roc.png", dpi=160); plt.close()
